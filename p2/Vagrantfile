@@ -1,0 +1,54 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# Script
+$k3s_server = <<-SCRIPT
+    echo 'installing K3S...'
+    curl -sfL https://get.k3s.io | K3S_KUBECONFIG_MODE="644" sh -s - -i $(hostname -I | awk '{print $2}')
+    export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+SCRIPT
+
+$install_server = <<-SCRIPT
+    echo 'installing server...'
+    /usr/local/bin/kubectl create -f /tmp/shared/app-one.yaml
+    /usr/local/bin/kubectl create -f /tmp/shared/app-two.yaml
+    /usr/local/bin/kubectl create -f /tmp/shared/app-three.yaml
+    /usr/local/bin/kubectl create -f /tmp/shared/ingress.yaml
+SCRIPT
+
+$open_ports = <<-SCRIPT
+	echo 'disable firewalld...'
+    sudo systemctl disable firewalld --now
+
+	echo 'updating package and installing ufw...'
+	sudo yum update -y
+	sudo yum install ufw -y
+
+	echo 'enable ufw and allow ports 6443 and 443...'
+	yes | sudo ufw enable
+	sudo ufw allow 6443/tcp
+	sudo ufw allow 443/tcp
+SCRIPT
+
+Vagrant.configure("2") do |config|
+
+  # Server
+	config.vm.synced_folder "./shared_folder", "/tmp/shared"
+
+  config.vm.define "fherbineS" do |c|
+	  c.vm.box = "generic/centos8"
+	  c.vm.hostname = "fherbineS"
+	  c.vm.network "private_network", ip: "192.168.42.110"
+	  c.vm.provider "virtualbox" do |vb|
+		  vb.memory = "1024"
+		  vb.cpus = "1"
+	  end
+	  c.vm.provision "shell",
+		  inline: $open_ports
+	  c.vm.provision "shell",
+		  inline: $k3s_server
+	  c.vm.provision "shell",
+		  inline: $install_server
+  end
+
+end

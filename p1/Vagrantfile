@@ -1,0 +1,77 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# Script
+$k3s_server = <<-SCRIPT
+	echo 'installing K3S...'
+    curl -sfL https://get.k3s.io | K3S_KUBECONFIG_MODE="644" sh -s - -i $(hostname -I | awk '{print $2}')
+SCRIPT
+
+$k3s_worker = <<-SCRIPT
+	echo 'installing K3S...'
+    curl -sfL http://get.k3s.io | K3S_URL=https://192.168.42.110:6443 K3S_TOKEN_FILE=/tmp/shared/token sh -s - -i $(hostname -I | awk '{print $2}')
+SCRIPT
+
+$open_ports = <<-SCRIPT
+	echo 'disable firewalld...'
+    sudo systemctl disable firewalld --now
+
+	echo 'updating package and installing ufw...'
+	sudo yum update -y
+	sudo yum install ufw -y
+
+	echo 'enable ufw and allow ports 6443 and 443...'
+	yes | sudo ufw enable
+	sudo ufw allow 6443/tcp
+	sudo ufw allow 443/tcp
+SCRIPT
+
+$set_hosts = <<-SCRIPT
+    echo "$(hostname -I | cut -d ' ' -f 2) fherbineS" >> /etc/hosts
+    echo "192.168.42.111 aabelqueSW" >> /etc/hosts
+SCRIPT
+
+Vagrant.configure("2") do |config|
+
+  # Server
+	config.vm.synced_folder "./shared_folder", "/tmp/shared"
+
+  config.vm.define "fherbineS" do |c|
+	  c.vm.box = "generic/centos8"
+	  c.vm.hostname = "fherbineS"
+	  c.vm.network "private_network", ip: "192.168.42.110"
+	  c.vm.provider "virtualbox" do |vb|
+		  vb.customize ["modifyvm", :id, "--natdnsproxy1", "on"]
+		  vb.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]
+		  vb.memory = "1024"
+		  vb.cpus = "1"
+	  end
+	  c.vm.provision "shell",
+		  inline: $open_ports
+	  c.vm.provision "shell",
+		  inline: $k3s_server
+	  c.vm.provision "shell",
+		  inline: $set_hosts
+	  c.vm.provision "shell",
+		  inline: "sudo cat /var/lib/rancher/k3s/server/node-token > /tmp/shared/token"
+  end
+
+  # ServerWorker
+  config.vm.define "aabelqueSW" do |c|
+	  c.vm.box = "generic/centos8"
+	  c.vm.hostname = "aabelqueSW"
+	  c.vm.network "private_network", ip: "192.168.42.111"
+	  c.vm.provider "virtualbox" do |vb|
+		  vb.customize ["modifyvm", :id, "--natdnsproxy1", "on"]
+		  vb.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]
+		  vb.memory = "1024"
+		  vb.cpus = "1"
+	  end
+	  c.vm.provision "shell",
+		  inline: $open_ports
+	  c.vm.provision "shell",
+		  inline: $set_hosts
+	  c.vm.provision "shell",
+		  inline: $k3s_worker
+  end
+end
